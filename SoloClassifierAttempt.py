@@ -1,10 +1,16 @@
 #!/usr/bin/env python
 # coding: utf-8
-
-# In[ ]:
-
-
+from torch.utils.data import DataLoader, Dataset
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import sklearn
+from sklearn.metrics import f1_score
 from torch.utils.data import DataLoader
+import os
+import subprocess
+from pytube import Playlist
+from moviepy.editor import VideoFileClip
 
 dataset_directory = "./demucs/solo_dataset"
 
@@ -12,15 +18,6 @@ dataset = AudioDataset(dataset_directory)
 
 batch_size = 32  # You can adjust this based on your needs
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-
-# In[ ]:
-
-
-import os
-import subprocess
-from pytube import Playlist
-from moviepy.editor import VideoFileClip
 
 # Replace this with the URL of your YouTube playlist
 playlist_url = "https://www.youtube.com/playlist?list=YOUR_PLAYLIST_ID"
@@ -47,34 +44,23 @@ for filename in os.listdir(output_directory):
         clip = VideoFileClip(video_path)
         clip.audio.write_audiofile(wav_path)
         clip.close()
-        os.remove(video_path)  # Remove the original video
-
-
-# In[ ]:
+        os.remove(video_path)
 
 
 import torchaudio
 import torchaudio.transforms as transforms
 
-# Define a function to load and preprocess audio
 def load_and_preprocess_audio(file_path):
     waveform, sample_rate = torchaudio.load(file_path)
     mfcc_transform = transforms.MFCC(
         sample_rate=sample_rate,
-        n_mfcc=13,  # Adjust based on your desired number of MFCC coefficients
+        n_mfcc=13,
     )
     mfcc = mfcc_transform(waveform)
     return mfcc
 
 audio_file = "path_to_audio.wav"
 mfcc = load_and_preprocess_audio(audio_file)
-
-
-# In[ ]:
-
-
-import torch
-import torch.nn as nn
 
 class AudioClassifier(nn.Module):
     def __init__(self):
@@ -96,19 +82,12 @@ class AudioClassifier(nn.Module):
         return x
 
 
-# In[ ]:
-
-
-import os
-import torchaudio
-from torch.utils.data import Dataset
-
 class AudioDataset(Dataset):
     def __init__(self, root_dir):
         self.root_dir = root_dir
         self.file_paths = []
         self.labels = []
-        
+
         for label in os.listdir(root_dir):
             label_dir = os.path.join(root_dir, label)
             if os.path.isdir(label_dir):
@@ -116,10 +95,10 @@ class AudioDataset(Dataset):
                     file_path = os.path.join(label_dir, filename)
                     self.file_paths.append(file_path)
                     self.labels.append(0 if label == "not_solo" else 1)  # "not solo" is labeled as 0, "solo" is labeled as 1
-        
+
     def __len__(self):
         return len(self.file_paths)
-    
+
     def __getitem__(self, idx):
         file_path = self.file_paths[idx]
         waveform, sample_rate = torchaudio.load(file_path)
@@ -131,26 +110,34 @@ class AudioDataset(Dataset):
         label = self.labels[idx]
         return mfcc, label
 
-
-# In[ ]:
-
-
-import torch
-import torch.optim as optim
-
 model = AudioClassifier()
 dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-# Training loop (example)
 for epoch in range(num_epochs):
     for inputs, labels in dataloader:
-        optimizer.zero_grad()  
-        outputs = model(inputs)  
-        
-        loss = criterion(outputs, labels)  
-        loss.backward()  
-        optimizer.step()  
+        optimizer.zero_grad()
+        outputs = model(inputs)
 
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+
+model.eval()
+
+true_labels = []
+predicted_labels = []
+
+with torch.no_grad():
+    for inputs, labels in dataloader:
+        outputs = model(inputs)
+        _, predicted = torch.max(outputs, 1)
+        true_labels.extend(labels.tolist())
+        predicted_labels.extend(predicted.tolist())
+
+f1 = f1_score(true_labels, predicted_labels)
+
+print("F1-Score: {:.4f}".format(f1))
